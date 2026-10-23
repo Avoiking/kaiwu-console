@@ -1,0 +1,116 @@
+{
+  "_readme": "这是 kaiwu 的配置示例。把它复制成 data/config.json 再按需修改；不需要的键直接删掉（删了会回落到代码里的默认值）。所有 _note_ 开头的键只是说明文字，程序会忽略。第一次用其实不用改任何东西 —— 直接跑 python console.py，在网页里点「添加模型文件夹」即可。",
+
+  "_note_网络与端口": "Web UI 默认 http://127.0.0.1:8080 ；推理服务 11435（OpenAI 兼容）；网关 11434（Ollama 兼容）。三个都只监听本机。",
+  "host": "127.0.0.1",
+  "port": 11435,
+  "webui_port": 8080,
+  "gateway_port": 11434,
+  "gateway_fallback_port": 11437,
+
+  "_note_gateway_host": "改成 0.0.0.0 可让局域网里的手机/平板访问，但见下方 gateway_api_key 的警告。",
+  "gateway_host": "127.0.0.1",
+  "_note_gateway_api_key": "非空时，非本机请求必须带 Authorization: Bearer <key> 或 X-Api-Key。本机 127.0.0.1 永远免钥匙。⚠️ 开局域网前请务必设一个，并自行确认 Windows 防火墙入站规则 —— 本项目不会替你改防火墙。",
+  "gateway_api_key": "",
+
+  "_note_llama_server_exe": "留空 = 自动发现（依次找环境变量 KAIWU_LLAMA_SERVER → 仓库 bin\\ → 仓库根目录 → ~/.kaiwu/bin*/ → PATH）。自动找不到时，把 llama-server.exe 的完整路径填到这里。llama-server 不随本仓库分发，请从 https://github.com/ggml-org/llama.cpp/releases 下载官方 Windows 包。⚠️ 路径用双反斜杠，或者用正斜杠。",
+  "llama_server_exe": "",
+
+  "_note_startup_timeout_sec": "等模型加载就绪的秒数上限。首次加载会编译 GPU 内核，可能几分钟，别调太小。",
+  "startup_timeout_sec": 900,
+
+  "_note_context_size": "上下文长度。留空 = 每个模型各自决定（见下方 model_ctx_overrides / ctx_measured），这是推荐做法 —— 直接填一个数会把所有模型都按它加载，小模型容易撑爆显存。",
+  "context_size": "",
+
+  "_note_model_ctx_overrides": "按模型指定上下文，形如 {\"模型tag\": 32768}。tag 就是网页上模型卡片显示的名字。⚠️ 这是**手写死值**，会盖掉下面自动测出来的结果 —— 只有当你明确知道自己只能开这么大时才填。留空 = 让控制台自己测。",
+  "model_ctx_overrides": {},
+  "_note_ctx_measured": "各模型实测出的可用上下文，由控制台自动写入。这里不用手填，也**不应该**从别人仓库抄 —— 上下文能开多大取决于你的显卡和量化档。",
+  "ctx_measured": {},
+  "_note_ctx_measured_env": "每次测量时的环境指纹（显卡型号/显存/KV量化/llama版本）。加载前会比对：换显卡或改了 KV 量化 → 旧缓存自动作废重测。不用手填。",
+  "ctx_measured_env": {},
+  "_note_ctx_auto": "true = 某模型还没有**有效**测量缓存时，加载前自动测一次（2~3 次加载，二三十秒），测完记住，以后不再测。默认开启。设 false 则完全不自动测。",
+  "ctx_auto": true,
+  "_note_ctx_probe_ctx": "自动测量时第一次加载用的窗口。只需够读出日志里的显存账目，不需要大。调大只会让首次探测更慢。",
+  "ctx_probe_ctx": 32768,
+  "_note_ctx_estimate_ratio": "显存估算的校准系数。程序按日志里的显存账目算出理论上能开多少，这个系数用来压掉高估（实测纯算式会高估 1.7~2.3 倍，因为 llama.cpp 显存将满时不报错、而是悄悄把层降到 CPU）。⚠️ 猜错的表现是「速度掉十倍」而不是报错，所以别往上调。",
+  "ctx_estimate_ratio": 0.42,
+  "_note_ctx_bisect_max_loads": "估值命中后还要不要继续往上顶窗口。0 = 只验证估值那一次；3 = 再顶一两档（多数情况够用）；10 = 完整二分追到极限。每次加载都要真实启停服务，大模型很慢，按需选。",
+  "ctx_bisect_max_loads": 3,
+  "_note_ctx_vram_reserve_mib": "显存估算时预留给驱动上下文/显存碎片的余量（MiB）。",
+  "ctx_vram_reserve_mib": 512,
+  "ctx_auto_max": 131072,
+  "_note_ctx_auto_min": "二分兜底时的下限，比这还低就落回默认 32768。",
+  "ctx_auto_min": 32768,
+
+  "_note_cache_type": "KV 缓存量化。q8_0 是默认值（2026-10-17 起，新机器不配也有）——KV 显存砍半、每 token 的 KV 读取流量也减半，同显存下能多塞层/开更大上下文，质量损失很小。想回到 llama.cpp 原版 f16 就显式填空字符串 \"\"。⚠️ 加载期参数，改完必须 stop → use 才生效。",
+  "cache_type_k": "q8_0",
+  "cache_type_v": "q8_0",
+
+  "_note_prefill_batch": "预填批量（-b/-ub）。长会话每一轮的第一遍（冷缓存）要全量预填整段历史，引擎默认 2048/512 下 GPU 利用率很低。实测加大 ubatch：预填 2.26 倍（90K 提示 190s → 84s），解码速度不变；代价是 compute buffer 约 +700 MiB —— ctx 自动测量会把这笔账算进去（显存紧的模型窗口会小一点，但那是真实账目）。想恢复引擎默认就把 prefill_ubatch 设成 512。",
+  "prefill_batch": 4096,
+  "prefill_ubatch": 2048,
+
+  "_note_ctx_tps_rounds": "上下文自动测量时，每个候选档位连打几次小请求取速度。默认 7、配合 ctx_tps_drop=2（丢前 2 枪，取后 5 枪均值）：MoE 专家权重走内存 mmap，页缓存要逐渐喂热，实测连打 7 枪还在爬坡（29.90 → 32.88 → 33.65 → 34.34 → 34.46 → 34.60 → 34.56），只丢 1 枪等于拿冷态读数当结论。判\"这档能不能跑\"取其中最快的（显存开销只会把速度往下拽，偶尔被别的应用拖一下不代表这档不可持续），比 MoE 的 fit 档位优劣取均值（比较相对高低，最快值会被偶发高值带偏）。枪数越少越快，但少于 5 枪时只丢第 1 枪。",
+  "ctx_tps_rounds": 7,
+  "_note_ctx_tps_drop": "每次测速丢掉前几枪（默认 2）。实测跨加载噪声约 1.2 tok/s（同一配置两次加载的读数差 1.19），所以扫档比较必须等爬坡结束；设为 0 表示全部计入（仅调试用）。",
+  "ctx_tps_drop": 2,
+  "_note_fit_gain_min_tps": "速度差容差（tok/s），界面上叫「速度差容差」。扫档时两档测速相差小于它就当作一样快：停止继续往下试，并在几个同样快的档里选**更省显存**的那个（fitt 数值更大）。为什么需要它：同一台机器同一个配置重复加载，读数本身就会差一点——本机实测两个 n_part 与显存完全相同的档，两次加载测出 32.02 与 33.21，差 1.19；比这还小的\"提升\"分不出来，为它多占显存不划算。默认 1.2 = 开发机（8G 显存笔记本 + gemma-4-26B IQ3_S）实测的跨加载差值。换机器或换模型后这个值会变（速度快的小模型绝对值也大、大显存机器层数多波动也大），分不清时**填大一点更安全**。范围 (0, 50]，留空或越界则用 1.2。",
+  "fit_gain_min_tps": 1.2,
+
+  "_note_ctx_moe_min_tps": "MoE 模型（混合专家，如 gemma-4-26B-A4B）的速度门槛（tok/s）：混合卸载/掉层的档位实测低于它就不算可用。默认 15 —— 同时拦两类坏档：显存贴顶的病态档（实测过 1.18 tok/s）和悬崖档（gemma @196608 掉到过 8.2，而同机型 184320 有 27.3，贴边档速度不稳）。不设更高：整合包要发到别的机器上，弱一档的卡跑 gemma 级 MoE 稳定也就 15~18，门槛高了会把它们冤到窗口下限。",
+  "ctx_moe_min_tps": 15.0,
+  "_note_ctx_dense_min_tps": "稠密模型（普通非 MoE）的速度门槛（tok/s）。稠密模型每 token 要读全部权重，掉几层到内存速度就腰斩，所以门槛定得高：默认 30，达不到就换更小的窗口，不拿半速糊弄。全层驻显存的档位不看速度直接过（那已是该模型在当前卡上最快的形态）。小显存跑大稠密模型可能永远摸不到 30，此时按窗口下限记录，卡片备注里会写明实测速度，可手动把窗口调大。",
+  "ctx_dense_min_tps": 30.0,
+
+  "_note_idle_unload_sec": "模型闲置多少秒后自动卸载释放显存。0 = 永不卸载。",
+  "idle_unload_sec": 300,
+  "_note_auto_open_browser": "启动控制台后自动打开浏览器。false = 只在终端打印网址，不弹浏览器（服务器场景适用）。",
+  "auto_open_browser": true,
+
+  "_note_imported_models": "模型登记表：{\"你起的名字\": \"模型文件的完整路径\"}。⚠️ 不用手写 —— 网页上点「添加模型文件夹」会自动登记。程序也会顺带扫描这些路径所在目录，把新放进来的 .gguf 列出来（mmproj*/mtp-* 除外，那是伴生文件不能单独加载）。",
+  "imported_models": {},
+  "_note_model_units": "「一模型一文件夹」登记表：{模型单元文件夹: [该文件夹里的模型名]}。约定：每个子文件夹放一个模型（主权重 + 可选的 mmproj 视觉塔 / mtp-* MTP 头 + 多个量化变体），点「添加模型文件夹」自动登记。目录里的塔/头自动归属该模型，不靠猜文件名。",
+  "model_units": {},
+  "_note_model_variants": "量化变体：{模型名: {量化标签: gguf路径}}。同一文件夹里同底座名的多个 gguf（如 Q4_K_M / Q5_K_XL）算同一个模型的不同量化档，卡片上出下拉切换；imported_models 里记的是当前激活的那个。",
+  "model_variants": {},
+  "_note_last_model": "上次用的模型。发消息时若服务没起，会自动加载它。不用手填。",
+  "last_model": "",
+
+  "_note_mmproj_models": "视觉塔（mmproj）映射：{\"模型tag\": \"mmproj 文件完整路径\"}。视觉模型需要它才能看图。⚠️ 同样不用手写 —— 「添加模型文件夹」会自动配；按「一模型一文件夹」约定摆放时，同目录的 mmproj 自动归属该模型；程序认不出归属时宁可不配，你可以在模型卡片上的「视觉 · 待选择」里手动指定。",
+  "mmproj_models": {},
+  "_note_draft_models": "投机解码草稿（MTP 头）：{\"模型tag\": {\"path\": \"文件路径\", \"type\": \"draft-mtp\", \"n_max\": 3}}。可选，加速效果强依赖任务，且草稿常驻显存。不用手填，「添加模型文件夹」会自动登记同目录的 mtp-* 文件。",
+  "draft_models": {},
+
+  "_note_attach": "attach_vision / attach_draft 是全局默认值（那些模型配了塔/草稿时是否真挂上）。attach_overrides 记每个模型的实际选择，在网页模型卡片上点「视觉」「MTP」标签即可切换，会自动写这里。⚠️ 两者都是加载期参数，切完要重新加载模型才生效。关掉视觉约省 1.3G 显存，关掉草稿约省 0.5G。",
+  "attach_vision": true,
+  "attach_draft": true,
+  "attach_overrides": {},
+
+  "_note_normalize_think": "把某些模型吐在正文里的 <think>…</think> 挪到 reasoning_content 字段，客户端才能正确显示成「思考过程」。默认开着，一般不用动。",
+  "normalize_think": true,
+  "_note_max_tokens_default": "客户端没指定生成长度时的默认值。思考型模型需要余量，8192 是稳妥值。",
+  "max_tokens_default": 8192,
+  "_note_gateway_v1_model_switch": "OpenAI 协议（/v1）收到请求时是否自动切到请求里指定的模型。默认开。设 false 则只跟随当前加载的模型。",
+  "gateway_v1_model_switch": true,
+
+  "_note_inject_datetime": "每次请求把当前日期时间注入**最后一条 user 消息的开头**（不在 system 最前——那会让 llama.cpp 的 prompt cache 全程失效，长会话每轮全量重填 100K ≈ 135s；实测改位置后缓存命中 ≈ 2s）。默认开 —— 本地模型有训练截止时间，不给时间它常自称「今天是 2024 年」，然后按错年份去搜索。Web UI 的 tok/s 统计也只算解码窗口（首字时间单独显示），不会再出现「100K 上下文 1 tok/s」的假象。",
+  "inject_datetime": true,
+  "_note_chat_autoload": "发消息时若推理服务没在跑，自动加载 last_model。默认开。",
+  "chat_autoload": true,
+
+  "_note_tavily_key": "联网搜索用的 Tavily API key，https://app.tavily.com 免费申请。留空 = 不联网（默认状态）。⚠️ 这个文件在 data/ 目录里，已被 .gitignore 排除，不会进版本库；网页首次打开时也会主动问你要。",
+  "tavily_key": "",
+  "_note_websearch_enabled": "是否允许联网搜索。网页顶栏有「联网」开关可随时切换，不用改这里。",
+  "websearch_enabled": false,
+
+  "_note_fs_roots": "允许模型读取的文件夹白名单。空 = 该功能不可用（模型读不到任何文件）。在网页「文件夹」抽屉里加。⚠️ 别把装密钥的目录加进来 —— 密钥类文件名（.env / *.pem / id_rsa / config.json 等）本来就会被自动屏蔽，但目录里其他敏感文件挡不住。",
+  "fs_roots": [],
+  "_note_fs_ignore_extra": "追加要忽略的文件名模式，支持通配符，如 [\"*.log\", \"private*\"]。注意：这里能写目录名，整棵剪掉。",
+  "fs_ignore_extra": [],
+  "_note_fs_allow_names": "强制放行被屏蔽的敏感文件。加了就等于把里面的内容暴露给模型和会话记录，除非你确认过，否则别填。",
+  "fs_allow_names": [],
+
+  "_note_ollama_dir": "从已有的 Ollama 模型目录导入 .gguf（可选功能，用不到就留空）。ollama_dir 填 Ollama 的模型目录（通常是 C:\\Users\\你的用户名\\.ollama\\models），import_dir 填你想把 .gguf 放过去的目标目录。",
+  "ollama_dir": "",
+  "import_dir": ""
+}
